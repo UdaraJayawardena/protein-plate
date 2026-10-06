@@ -1,0 +1,13 @@
+node_modules
+
+data.json
+
+data.json.tmp
+
+.env
+
+notes.txt
+
+/data
+
+/backup
