@@ -2,17 +2,69 @@ require("dotenv").config();
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { MongoClient } = require("mongodb");
 
 const PORT = process.env.PORT || 3000;
-const URI = process.env.MONGODB_URI;
-if (!URI) {
-  console.error("MONGODB_URI is missing. Copy .env.example to .env and put your Atlas connection string in it.");
-  process.exit(1);
+// ---------- password protection (HTTP Basic auth) ----------
+const APP_USER = process.env.APP_USER;
+const APP_PASSWORD = process.env.APP_PASSWORD;
+const AUTH_ON = !!(APP_USER && APP_PASSWORD);
+const ONLINE = !!(process.env.RENDER || process.env.VERCEL || process.env.NODE_ENV === "production");
+const MISSING_AUTH = ONLINE && !AUTH_ON;
+if (MISSING_AUTH) console.error("APP_USER and APP_PASSWORD must be set when the app runs online. Add them as environment variables.");
+const sha = (s) => crypto.createHash("sha256").update(String(s)).digest();
+const safeEqual = (a, b) => crypto.timingSafeEqual(sha(a), sha(b)); // constant-time comparison
+
+async function requireLogin(req, res, next) {
+  const h = req.headers.authorization || "";
+  if (h.startsWith("Basic ")) {
+    const decoded = Buffer.from(h.slice(6), "base64").toString("utf8");
+    const i = decoded.indexOf(":");
+    if (i >= 0) {
+      const userOk = safeEqual(decoded.slice(0, i), APP_USER);
+      const passOk = safeEqual(decoded.slice(i + 1), APP_PASSWORD);
+      if (userOk && passOk) return next();
+    }
+    await new Promise((r) => setTimeout(r, 400)); // slow down guessing
+  }
+  res.set("WWW-Authenticate", 'Basic realm="Protein Plate", charset="UTF-8"').status(401).send("Login required");
 }
 
-const client = new MongoClient(URI, { serverSelectionTimeoutMS: 10000 });
-let foodsCol, daysCol, settingsCol;
+// ---------- database connection (created on first use, then reused) ----------
+// On Vercel the app runs as short-lived functions, so the connection is made lazily and kept
+// for as long as the function instance stays warm. Locally it is made once at startup.
+let client, foodsCol, daysCol, settingsCol, readyPromise;
+
+async function init() {
+  const URI = process.env.MONGODB_URI;
+  if (!URI) {
+    throw new Error("MONGODB_URI is missing. Put your Atlas connection string in .env (locally) or in the environment variables (online).");
+  }
+  try {
+    client = new MongoClient(URI, { serverSelectionTimeoutMS: 10000, maxPoolSize: 5 });
+    try {
+      await client.connect();
+    } catch (e) {
+      throw new Error("Could not connect to MongoDB: " + e.message + "\nCheck: 1) the password in the connection string, 2) your IP is allowed in Atlas > Network Access, 3) you are online.");
+    }
+    const db = client.db(process.env.MONGODB_DB || "proteinplate");
+    foodsCol = db.collection("foods");
+    daysCol = db.collection("days");
+    settingsCol = db.collection("settings");
+    await foodsCol.createIndex({ nameKey: 1 }, { unique: true });
+    await importFromFiles();
+  } catch (e) {
+    if (client) client.close().catch(() => {});
+    client = null;
+    throw e;
+  }
+}
+
+function ready() {
+  if (!readyPromise) readyPromise = init().catch((e) => { readyPromise = null; throw e; });
+  return readyPromise;
+}
 
 // ---------- validation ----------
 const isNum = (v) => typeof v === "number" && isFinite(v) && v >= 0;
@@ -152,8 +204,27 @@ async function importFromFiles() {
 
 // ---------- app ----------
 const app = express();
+app.disable("x-powered-by");
+app.use((req, res, next) =>
+  MISSING_AUTH ? res.status(503).send("Server is not configured: set APP_USER and APP_PASSWORD.") : next());
+if (AUTH_ON) app.use(requireLogin); // protects the page and every API route
 app.use(express.json({ limit: "1mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+
+// The whole front end is one file. It is read per request (so edits show on refresh) and sent through
+// Express so it sits behind the login. (A "public" folder would be served by Vercel without the login.)
+app.get(["/", "/index.html"], (req, res) => {
+  res.set("Cache-Control", "no-cache").type("html").send(fs.readFileSync(path.join(__dirname, "static", "index.html"), "utf8"));
+});
+
+app.use("/api", async (req, res, next) => {
+  try {
+    await ready();
+    next();
+  } catch (e) {
+    console.error(e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 const wrap = (fn) => (req, res) =>
   fn(req, res).catch((e) => {
@@ -180,26 +251,21 @@ app.put("/api/foods", wrap(async (req, res) => {
   res.json({ ok: true, foods: r.foods });
 }));
 
+// Local use: `npm start`. On Vercel the app is exported below and Vercel runs it, so no listen() there.
 async function start() {
+  if (MISSING_AUTH) process.exit(1);
   try {
-    await client.connect();
+    await ready();
   } catch (e) {
-    console.error("Could not connect to MongoDB: " + e.message);
-    console.error("Check: 1) the password in .env, 2) your current IP is allowed in Atlas > Network Access, 3) you are online.");
-    process.exit(1);
-  }
-  try {
-    const db = client.db(process.env.MONGODB_DB || "proteinplate");
-    foodsCol = db.collection("foods");
-    daysCol = db.collection("days");
-    settingsCol = db.collection("settings");
-    await foodsCol.createIndex({ nameKey: 1 }, { unique: true });
-    await importFromFiles();
-  } catch (e) {
-    console.error("Startup failed: " + e.message);
+    console.error(e.message);
     process.exit(1);
   }
   // 0.0.0.0 so your phone can reach it over the same Wi-Fi
-  app.listen(PORT, "0.0.0.0", () => console.log("Protein Plate running on http://localhost:" + PORT + " (database connected)"));
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log("Protein Plate running on http://localhost:" + PORT + " (database connected)");
+    console.log(AUTH_ON ? "Password protection: ON" : "Password protection: OFF (set APP_USER and APP_PASSWORD in .env to turn it on)");
+  });
 }
-start();
+
+if (require.main === module) start();
+module.exports = app;

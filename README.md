@@ -13,6 +13,7 @@ Built with Node.js, Express and MongoDB Atlas. The front end is a single HTML fi
 - Add, edit and delete foods from the app (a "Foods" table with search)
 - History of earlier days (last 7 shown, "Show older" for more)
 - Works on a phone over your home Wi-Fi
+- Optional password login (required when the app runs online)
 - Data stored in MongoDB Atlas, so the laptop and phone always see the same data
 
 ## Project structure
@@ -22,7 +23,7 @@ protein-plate/
 ├── server.js          Express server and MongoDB access
 ├── package.json
 ├── .env.example       Template for your connection string
-├── public/
+├── static/
 │   └── index.html     The whole front end (HTML, CSS, JavaScript)
 └── data/
     └── foods.json     Starter foods, imported into the database once
@@ -51,6 +52,7 @@ protein-plate/
    ```
 
    Optional: `MONGODB_DB=proteinplate` to choose the database name (this is the default).
+   Optional: `APP_USER` and `APP_PASSWORD` to turn on the password login (see below).
    Never share or commit this file. It is already listed in `.gitignore`.
 
 4. **Start the server**
@@ -73,6 +75,44 @@ Your phone and computer must be on the same Wi-Fi.
 2. On the phone, open `http://YOUR-IP:3000`, for example `http://192.168.1.20:3000` (use `http`, not `https`).
 
 If it does not load, allow Node.js through the firewall on private networks. The IP can change when the router restarts; repeat step 1 to find the new one.
+
+## Password protection
+
+Set both `APP_USER` and `APP_PASSWORD` and the whole app, page and API, asks for that username and password (HTTP Basic login). Your browser asks once and remembers it.
+
+- At home you can leave both empty and run without a login. The server prints "Password protection: OFF" when it starts.
+- When the app runs online (Vercel, Render, or `NODE_ENV=production`), it refuses to serve anything unless both are set, so a forgotten setting can never leave your data open.
+- There is no lockout after wrong attempts, only a short delay, so use a long password (12 or more characters).
+- Over plain `http` on your home Wi-Fi the login is not encrypted. Online, Render serves the app over `https`.
+
+## Deploying to Vercel
+
+Vercel runs the app as a serverless function, so there is no always-on server to pay for. This works because all data is in MongoDB Atlas, not on the server's disk.
+
+1. Push the project to a **private** GitHub repository. `.env` and `data/` are ignored by git. You do not need `data/` online, because your foods and meals are already in the database.
+2. On [Vercel](https://vercel.com), choose **Add New > Project** and import the repository. Leave the build settings as detected.
+3. Add these **environment variables** (for Production): `MONGODB_URI`, `APP_USER`, `APP_PASSWORD`.
+4. In Atlas under **Network Access**, allow `0.0.0.0/0`. Vercel's servers do not use a fixed IP address, so a single IP cannot be allowed. This makes your database password the main protection for the database, so make it long and random.
+5. Deploy, open the address Vercel gives you, log in, and add the page to your phone's home screen.
+
+Notes:
+
+- The database connection is created on the first request and reused while the function stays warm, so the first request after a quiet period is a little slower.
+- The page is sent through Express so that it sits behind the login. This is why the front end lives in `static/` and not `public/`: Vercel serves a `public/` folder directly, without the login.
+- Free-plan terms and limits change, so check Vercel's pricing page.
+
+## Deploying to Render (alternative)
+
+Render may ask for a payment card before it lets you create a service, so check this first.
+
+1. Push the project to a **private** GitHub repository. `.env` and `data/` are ignored by git. You do not need `data/` online, because your foods and meals are already in the database.
+2. On [Render](https://render.com), choose **New > Web Service** and connect the repository.
+3. Settings: runtime **Node**, build command `npm install`, start command `npm start`, instance type **Free**.
+4. Add these **environment variables**: `MONGODB_URI`, `APP_USER`, `APP_PASSWORD`.
+5. In Atlas under **Network Access**, allow `0.0.0.0/0`. Render's free servers do not have a fixed IP address, so a single IP cannot be allowed. This makes your database password the main protection for the database, so make it long and random.
+6. Open the address Render gives you, log in, and add the page to your phone's home screen.
+
+Free Render apps sleep when idle, so the first load after a break can be slow. Free-tier terms change, so check Render's pricing page.
 
 ## How foods work
 
@@ -118,7 +158,7 @@ Both PUT endpoints validate the input and only write what changed.
 
 ## Known limitations
 
-- There is no login. Anyone who can reach the server can read and change your data, so keep it on your home network or add authentication before putting it online.
+- The login is one shared username and password, with no lockout. Choose a long password, especially if the app is online.
 - Each save sends the whole day list. If you add meals on two devices without refreshing in between, the later save can overwrite the earlier one. Refresh before adding on a different device.
 - The free Atlas tier does not necessarily include automatic backups, so export or copy your data now and then.
 
@@ -126,4 +166,4 @@ Both PUT endpoints validate the input and only write what changed.
 
 - Export and import a backup file
 - Weekly average and charts
-- Deploy online (for example on Render) with a password login
+- A stronger login (for example per-user accounts)
