@@ -79,6 +79,9 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
 .toprow{display:flex;justify-content:flex-end}
 .out{border:0;background:none;color:var(--mute);font-size:.85rem;cursor:pointer;padding:2px 0 6px}
 .out:hover{color:var(--ink);text-decoration:underline}
+.backup{margin-top:28px;text-align:center;color:var(--mute);font-size:.85rem}
+.backup button{border:0;background:none;color:inherit;text-decoration:underline;cursor:pointer;padding:6px 8px;font:inherit}
+.backup .msg{margin-top:4px}
 </style>
 </head>
 <body>
@@ -119,6 +122,12 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
     <p class="empty" id="hempty">No earlier days yet.</p>
   </section>
 
+  <footer class="backup">
+    <button type="button" id="bkDown">Download backup</button> &middot;
+    <button type="button" id="bkUp">Restore from backup</button>
+    <input type="file" id="bkFile" accept="application/json,.json" hidden>
+    <p class="msg" id="bkMsg" role="status"></p>
+  </footer>
 </main>
 <dialog id="fdlg" aria-labelledby="ft" style="max-width:560px">
   <div class="dbody">
@@ -293,6 +302,53 @@ $("fclose").onclick=()=>$("fdlg").close();
 $("openAdd").onclick=()=>openFoodForm(null);
 $("ccancel").onclick=()=>$("dlg").close();
 ["dlg","fdlg"].forEach(id=>$(id).addEventListener("click",e=>{if(e.target===$(id))$(id).close()}));
+// ----- backup: download everything as one file, or restore it from such a file -----
+const J={"Content-Type":"application/json"};
+const bkMsg=t=>{$("bkMsg").textContent=t};
+const countDays=log=>Object.values(log).filter(m=>Array.isArray(m)&&m.length).length;
+async function buildBackup(){
+  const [fr,dr]=await Promise.all([fetch("/api/foods"),fetch("/api/data")]);
+  if(!fr.ok||!dr.ok)throw new Error("Could not read your data from the server.");
+  const foods=await fr.json(),data=await dr.json();
+  return {app:"protein-plate",version:1,exportedAt:new Date().toISOString(),goal:data.goal,foods:{default:foods.default,custom:foods.custom},log:data.log};
+}
+function saveFile(name,obj){
+  const url=URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:"application/json"}));
+  const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+const okNum=v=>typeof v==="number"&&isFinite(v)&&v>=0;
+const validLog=log=>Object.entries(log).every(([d,ms])=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&Array.isArray(ms)&&ms.every(m=>m&&typeof m.n==="string"&&okNum(m.g)&&okNum(m.p)&&["raw","cooked","piece"].includes(m.s)));
+async function restoreFromText(text){
+  let b;
+  try{b=JSON.parse(text)}catch(e){return "That file is not valid JSON."}
+  if(!b||b.app!=="protein-plate"||b.version!==1||!b.foods||!Array.isArray(b.foods.default)||!Array.isArray(b.foods.custom)||!b.log||typeof b.log!=="object"||Array.isArray(b.log)||!(b.goal>0))return "That file is not a Protein Plate backup.";
+  if(!validLog(b.log))return "Restore stopped and nothing was changed: the meals in the file are not valid.";
+  const nf=b.foods.default.length+b.foods.custom.length,nd=countDays(b.log);
+  const when=b.exportedAt&&!isNaN(new Date(b.exportedAt))?new Date(b.exportedAt).toLocaleDateString():"an unknown date";
+  if(!confirm("Restore the backup from "+when+" ("+nf+" foods, "+nd+" days of meals, goal "+b.goal+" g)?\n\nThis REPLACES everything currently saved."))return "Restore cancelled.";
+  // keep a safety copy of what is there now, if there is anything worth keeping
+  try{const cur=await buildBackup();if(countDays(cur.log)>0)saveFile("protein-plate-before-restore-"+today()+".json",cur)}catch(e){}
+  const err=async r=>((await r.json().catch(()=>({}))).error||"the file contains invalid data.");
+  const fw=await fetch("/api/foods",{method:"PUT",headers:J,body:JSON.stringify({default:b.foods.default,custom:b.foods.custom})});
+  if(!fw.ok)return "Restore stopped and nothing was changed: "+await err(fw);
+  const lw=await fetch("/api/data",{method:"PUT",headers:J,body:JSON.stringify({log:b.log,goal:b.goal})});
+  if(!lw.ok)return "The foods were restored, but the meals could not be saved: "+await err(lw)+" Try the restore again.";
+  await load();fillList();render();updateForm();
+  return "Restored: "+nf+" foods, "+nd+" days of meals.";
+}
+$("bkDown").onclick=async()=>{
+  bkMsg("");
+  try{const b=await buildBackup();saveFile("protein-plate-backup-"+today()+".json",b);bkMsg("Backup downloaded: "+(b.foods.default.length+b.foods.custom.length)+" foods, "+countDays(b.log)+" days of meals.")}
+  catch(e){bkMsg(e.message)}
+};
+$("bkUp").onclick=()=>$("bkFile").click();
+$("bkFile").onchange=async()=>{
+  const f=$("bkFile").files[0];$("bkFile").value="";if(!f)return;
+  if(f.size>5e6){bkMsg("That file is too large to be a backup.");return}
+  bkMsg("Restoring...");
+  try{bkMsg(await restoreFromText(await f.text()))}catch(e){bkMsg("Restore failed: "+e.message)}
+};
 if(document.querySelector('meta[name="pp-auth"]'))$("logout").hidden=false;
 $("logout").onclick=async()=>{try{await fetch("/auth/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})}catch(e){}location.replace("/")};
 load().then(()=>{fillList();render();updateForm()});
