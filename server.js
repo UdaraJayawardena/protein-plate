@@ -210,10 +210,21 @@ app.use((req, res, next) =>
 if (AUTH_ON) app.use(requireLogin); // protects the page and every API route
 app.use(express.json({ limit: "1mb" }));
 
-// The whole front end is one file. It is read per request (so edits show on refresh) and sent through
-// Express so it sits behind the login. (A "public" folder would be served by Vercel without the login.)
+// The whole front end is one file, sent through Express so it sits behind the login.
+// (A "public" folder would be served by Vercel without the login.)
+// Locally it is read from static/index.html on every request, so edits show on refresh.
+// Online it comes from page.js, a copy made by scripts/build-page.js, because Vercel always
+// bundles required modules but can leave loose folders out.
+function indexHtml() {
+  if (!process.env.VERCEL) {
+    try {
+      return fs.readFileSync(path.join(__dirname, "static", "index.html"), "utf8");
+    } catch (e) { /* fall back to page.js */ }
+  }
+  return require("./page.js");
+}
 app.get(["/", "/index.html"], (req, res) => {
-  res.set("Cache-Control", "no-cache").type("html").send(fs.readFileSync(path.join(__dirname, "static", "index.html"), "utf8"));
+  res.set("Cache-Control", "no-cache").type("html").send(indexHtml());
 });
 
 app.use("/api", async (req, res, next) => {
@@ -250,6 +261,13 @@ app.put("/api/foods", wrap(async (req, res) => {
   await saveFoods(r.foods);
   res.json({ ok: true, foods: r.foods });
 }));
+
+// Anything that throws is written to the log (visible in Vercel's logs) instead of failing silently.
+app.use((err, req, res, next) => {
+  console.error(err && err.stack ? err.stack : err);
+  if (res.headersSent) return next(err);
+  res.status(500).send("Internal Server Error. The details are in the server logs.");
+});
 
 // Local use: `npm start`. On Vercel the app is exported below and Vercel runs it, so no listen() there.
 async function start() {

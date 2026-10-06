@@ -3,16 +3,17 @@
   "version": "2.0.0",
   "description": "Simple protein tracker with Sri Lankan foods (Express + MongoDB)",
   "main": "server.js",
-  "scripts": { "start": "nodemon server.js" },
+  "scripts": {
+    "start": "node server.js",
+    "prestart": "node scripts/build-page.js",
+    "build-page": "node scripts/build-page.js"
+  },
   "dependencies": {
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "mongodb": "^6.8.0"
   },
-    "devDependencies": {
-    "nodemon": "^3.1.14"
-  },
-    "engines": {
+  "engines": {
     "node": ">=18"
   }
 }
