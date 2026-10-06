@@ -6,30 +6,119 @@ const crypto = require("crypto");
 const { MongoClient } = require("mongodb");
 
 const PORT = process.env.PORT || 3000;
-// ---------- password protection (HTTP Basic auth) ----------
+// ---------- password protection (sign-in page + signed cookie) ----------
 const APP_USER = process.env.APP_USER;
 const APP_PASSWORD = process.env.APP_PASSWORD;
 const AUTH_ON = !!(APP_USER && APP_PASSWORD);
 const ONLINE = !!(process.env.RENDER || process.env.VERCEL || process.env.NODE_ENV === "production");
 const MISSING_AUTH = ONLINE && !AUTH_ON;
 if (MISSING_AUTH) console.error("APP_USER and APP_PASSWORD must be set when the app runs online. Add them as environment variables.");
+
+const COOKIE = "pp_session";
+const SESSION_MS = 30 * 24 * 60 * 60 * 1000; // stay signed in for 30 days
 const sha = (s) => crypto.createHash("sha256").update(String(s)).digest();
 const safeEqual = (a, b) => crypto.timingSafeEqual(sha(a), sha(b)); // constant-time comparison
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function requireLogin(req, res, next) {
-  const h = req.headers.authorization || "";
-  if (h.startsWith("Basic ")) {
-    const decoded = Buffer.from(h.slice(6), "base64").toString("utf8");
-    const i = decoded.indexOf(":");
-    if (i >= 0) {
-      const userOk = safeEqual(decoded.slice(0, i), APP_USER);
-      const passOk = safeEqual(decoded.slice(i + 1), APP_PASSWORD);
-      if (userOk && passOk) return next();
-    }
-    await new Promise((r) => setTimeout(r, 400)); // slow down guessing
+// The cookie is signed with a key made from the username and password,
+// so changing either one signs everyone out.
+const SESSION_KEY = AUTH_ON
+  ? crypto.createHmac("sha256", "protein-plate-session-v1").update(APP_USER + "\n" + APP_PASSWORD).digest()
+  : null;
+const sign = (exp) => crypto.createHmac("sha256", SESSION_KEY).update("v1." + exp).digest("base64url");
+const makeSession = () => { const exp = Date.now() + SESSION_MS; return exp + "." + sign(exp); };
+
+function getCookie(req, name) {
+  for (const part of (req.headers.cookie || "").split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
   }
-  res.set("WWW-Authenticate", 'Basic realm="Protein Plate", charset="UTF-8"').status(401).send("Login required");
+  return null;
 }
+
+function validSession(req) {
+  if (!AUTH_ON) return true;
+  const t = getCookie(req, COOKIE);
+  if (!t) return false;
+  const i = t.indexOf(".");
+  if (i < 1) return false;
+  const exp = Number(t.slice(0, i));
+  if (!(exp > Date.now())) return false;
+  const given = t.slice(i + 1);
+  const good = sign(exp);
+  return given.length === good.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(good));
+}
+
+function cookieHeader(value, maxAgeSeconds, req) {
+  const secure = process.env.VERCEL || req.headers["x-forwarded-proto"] === "https";
+  return COOKIE + "=" + value + "; Path=/; Max-Age=" + maxAgeSeconds + "; HttpOnly; SameSite=Lax" + (secure ? "; Secure" : "");
+}
+
+// The sign-in page. It is a string inside this file so that it is always bundled when deployed.
+const LOGIN_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Sign in - Protein Plate</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f6f1;--card:#fff;--ink:#16302b;--mute:#5d726c;--line:#d9e1db;--gold:#e9a500;--goldink:#3a2a00;--bad:#b3261e;box-sizing:border-box}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1c19;--card:#172a26;--ink:#e8f0ec;--mute:#93aaa3;--line:#27403a;--gold:#f0b429;--goldink:#2a1d00;--bad:#ff8a80}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 "Bricolage Grotesque",system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px))}
+.box{width:100%;max-width:360px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px 22px}
+.logo{width:44px;height:44px;border-radius:50%;border:6px solid var(--gold);margin:0 0 14px;position:relative}
+.logo:after{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--gold);opacity:.35}
+h1{margin:0;font-size:1.6rem;font-weight:800;letter-spacing:-.02em}
+.sub{margin:4px 0 20px;color:var(--mute)}
+label{display:block;font-size:.85rem;color:var(--mute);margin:12px 0 4px}
+input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit}
+input:focus-visible,button:focus-visible{outline:3px solid var(--gold);outline-offset:1px}
+.pw{position:relative}
+.pw input{padding-right:70px}
+.eye{position:absolute;right:4px;top:4px;bottom:4px;padding:0 12px;border:0;border-radius:8px;background:none;color:var(--mute);font:inherit;font-size:.85rem;cursor:pointer}
+.go{width:100%;margin-top:20px;padding:13px;border:0;border-radius:10px;background:var(--gold);color:var(--goldink);font:inherit;font-weight:800;cursor:pointer}
+.go:disabled{opacity:.6;cursor:default}
+.err{min-height:1.3em;margin:12px 0 0;color:var(--bad);font-size:.9rem}
+</style>
+</head>
+<body>
+<main class="box">
+  <div class="logo" aria-hidden="true"></div>
+  <h1>Protein Plate</h1>
+  <p class="sub">Sign in to continue</p>
+  <form id="f" autocomplete="on">
+    <label for="u">Username</label>
+    <input id="u" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required autofocus>
+    <label for="p">Password</label>
+    <div class="pw">
+      <input id="p" name="password" type="password" autocomplete="current-password" required>
+      <button type="button" class="eye" id="eye" aria-pressed="false">Show</button>
+    </div>
+    <p class="err" id="err" role="alert"></p>
+    <button class="go" id="go" type="submit">Sign in</button>
+  </form>
+</main>
+<script>
+var f=document.getElementById("f"),u=document.getElementById("u"),p=document.getElementById("p"),
+    err=document.getElementById("err"),go=document.getElementById("go"),eye=document.getElementById("eye");
+eye.onclick=function(){var show=p.type==="password";p.type=show?"text":"password";eye.textContent=show?"Hide":"Show";eye.setAttribute("aria-pressed",show)};
+f.addEventListener("submit",async function(e){
+  e.preventDefault();err.textContent="";go.disabled=true;go.textContent="Signing in...";
+  try{
+    var r=await fetch("/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u.value,password:p.value})});
+    if(r.ok){location.replace("/");return}
+    var o={};try{o=await r.json()}catch(x){}
+    err.textContent=o.error||"Could not sign in.";p.value="";p.focus();
+  }catch(x){err.textContent="Could not reach the server."}
+  go.disabled=false;go.textContent="Sign in";
+});
+</script>
+</body>
+</html>`;
 
 // ---------- database connection (created on first use, then reused) ----------
 // On Vercel the app runs as short-lived functions, so the connection is made lazily and kept
@@ -53,7 +142,11 @@ async function init() {
     daysCol = db.collection("days");
     settingsCol = db.collection("settings");
     await foodsCol.createIndex({ nameKey: 1 }, { unique: true });
-    await importFromFiles();
+    try {
+      await importFromFiles();
+    } catch (e) {
+      if (!(e && e.code === 11000)) throw e; // duplicate key: another instance imported at the same moment
+    }
   } catch (e) {
     if (client) client.close().catch(() => {});
     client = null;
@@ -207,25 +300,50 @@ const app = express();
 app.disable("x-powered-by");
 app.use((req, res, next) =>
   MISSING_AUTH ? res.status(503).send("Server is not configured: set APP_USER and APP_PASSWORD.") : next());
-if (AUTH_ON) app.use(requireLogin); // protects the page and every API route
 app.use(express.json({ limit: "1mb" }));
 
-// The whole front end is one file, sent through Express so it sits behind the login.
-// (A "public" folder would be served by Vercel without the login.)
+// ----- sign in / sign out -----
+app.post("/auth/login", async (req, res) => {
+  if (!AUTH_ON) return res.json({ ok: true });
+  const { username, password } = req.body || {};
+  const userOk = typeof username === "string" && safeEqual(username.trim(), APP_USER);
+  const passOk = typeof password === "string" && safeEqual(password, APP_PASSWORD);
+  if (!(userOk && passOk)) {
+    await delay(400); // slow down guessing
+    return res.status(401).json({ error: "Wrong username or password." });
+  }
+  res.set("Set-Cookie", cookieHeader(makeSession(), SESSION_MS / 1000, req)).json({ ok: true });
+});
+
+app.post("/auth/logout", (req, res) => {
+  if (!req.is("application/json")) return res.status(400).json({ error: "Bad request" });
+  res.set("Set-Cookie", cookieHeader("", 0, req)).json({ ok: true });
+});
+
+// ----- the page -----
+// The whole front end is one file, sent through Express so it sits behind the sign-in.
+// (A "public" folder would be served by Vercel without any sign-in.)
 // Locally it is read from static/index.html on every request, so edits show on refresh.
 // Online it comes from page.js, a copy made by scripts/build-page.js, because Vercel always
 // bundles required modules but can leave loose folders out.
 function indexHtml() {
+  let html;
   if (!process.env.VERCEL) {
     try {
-      return fs.readFileSync(path.join(__dirname, "static", "index.html"), "utf8");
+      html = fs.readFileSync(path.join(__dirname, "static", "index.html"), "utf8");
     } catch (e) { /* fall back to page.js */ }
   }
-  return require("./page.js");
+  if (!html) html = require("./page.js");
+  // tells the page that sign-in is on, so it can show the "Log out" button
+  return AUTH_ON ? html.replace("</head>", '<meta name="pp-auth" content="1">\n</head>') : html;
 }
 app.get(["/", "/index.html"], (req, res) => {
-  res.set("Cache-Control", "no-cache").type("html").send(indexHtml());
+  res.set("Cache-Control", "no-store").type("html").send(validSession(req) ? indexHtml() : LOGIN_HTML);
 });
+
+// ----- the API: needs a valid session, then the database -----
+app.use("/api", (req, res, next) =>
+  validSession(req) ? next() : res.status(401).json({ error: "Login required" }));
 
 app.use("/api", async (req, res, next) => {
   try {
@@ -281,7 +399,7 @@ async function start() {
   // 0.0.0.0 so your phone can reach it over the same Wi-Fi
   app.listen(PORT, "0.0.0.0", () => {
     console.log("Protein Plate running on http://localhost:" + PORT + " (database connected)");
-    console.log(AUTH_ON ? "Password protection: ON" : "Password protection: OFF (set APP_USER and APP_PASSWORD in .env to turn it on)");
+    console.log(AUTH_ON ? "Password protection: ON (sign-in page)" : "Password protection: OFF (set APP_USER and APP_PASSWORD in .env to turn it on)");
   });
 }
 

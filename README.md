@@ -12,7 +12,7 @@ Built with Node.js, Express and MongoDB Atlas. The front end is a single HTML fi
 - Starter list of 30 foods, including common Sri Lankan dishes
 - Add, edit and delete foods from the app (a "Foods" table with search)
 - History of earlier days (last 7 shown, "Show older" for more)
-- Password login, required when the app runs online
+- Sign-in page with a 30-day session, required when the app runs online
 - Works on a phone, at home over Wi-Fi or online on Vercel
 
 ## Project structure
@@ -76,9 +76,10 @@ Find the computer's local IP address (`ipconfig` on Windows, `ipconfig getifaddr
 
 ## Password protection
 
-When `APP_USER` and `APP_PASSWORD` are both set, the page and every API route ask for that username and password (HTTP Basic login). Your browser asks once and remembers it.
+When `APP_USER` and `APP_PASSWORD` are both set, the app shows a sign-in page. After you sign in, a signed cookie keeps you signed in for 30 days, and the **Log out** button at the top right ends the session. Without a valid sign-in, the server sends only the sign-in page and refuses every API call.
 
-- Locally you can leave both empty to run without a login.
+- The cookie is HttpOnly and SameSite=Lax, and also Secure when the app is served over https. It is signed with a key made from the username and password, so changing either one signs everyone out.
+- Locally you can leave both empty to run without a sign-in.
 - When the app runs online (Vercel or `NODE_ENV=production`), it refuses to serve anything unless both are set.
 - There is a short delay after a wrong attempt but no lockout, so use a long password.
 
@@ -141,6 +142,6 @@ Both PUT endpoints validate the input and only write what changed.
 
 ## Known limitations
 
-- The login is one shared username and password.
+- The sign-in is one shared username and password.
 - Each save sends the whole day list. If you add meals on two devices without refreshing in between, the later save can overwrite the earlier one. Refresh before adding on a different device.
 - The free Atlas tier does not necessarily include automatic backups, so check your cluster's backup settings.
