@@ -89,10 +89,6 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
 .chip{flex:none;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:var(--bg);white-space:nowrap;cursor:inherit;font-size:.9rem}
 .chip:hover{border-color:var(--gold)}
 .chip b{font-weight:600}
-.chip span{color:var(--mute);margin-left:4px}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:12px;font-size:.9rem;display:flex;gap:12px;align-items:center;max-width:calc(100% - 32px);z-index:20}
-.toast[hidden]{display:none}
-.toast button{border:0;background:none;color:var(--gold);font:inherit;font-weight:800;cursor:pointer;padding:0}
 .backup .warn{color:var(--warn);font-weight:600}
 </style>
 </head>
@@ -106,7 +102,7 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
 
   <section class="card" aria-label="Add food">
     <div id="recentWrap" hidden>
-      <label id="recentLabel">Quick add (tap to add to today)</label>
+      <label id="recentLabel">Frequent foods (tap one, then enter the amount)</label>
       <div class="recent" id="recent" role="group" aria-labelledby="recentLabel"></div>
     </div>
     <label for="food">Food</label>
@@ -146,7 +142,6 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
     <p class="msg" id="bkMsg" role="status"></p>
   </footer>
 </main>
-<div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toastText"></span> <button type="button" id="toastUndo">Undo</button></div>
 <dialog id="fdlg" aria-labelledby="ft" style="max-width:560px">
   <div class="dbody">
     <div class="top"><h2 id="ft" style="margin:0">Foods</h2><button type="button" class="more" id="fclose" style="width:auto;margin:0;padding:8px 14px">Close</button></div>
@@ -322,48 +317,43 @@ $("fclose").onclick=()=>$("fdlg").close();
 $("openAdd").onclick=()=>openFoodForm(null);
 $("ccancel").onclick=()=>$("dlg").close();
 ["dlg","fdlg"].forEach(id=>$(id).addEventListener("click",e=>{if(e.target===$(id))$(id).close()}));
-// ----- recent foods: one-tap row built from your own logs -----
+// ----- frequent foods: a sliding row of buttons built from your own logs -----
+// A button only picks the food (and the form you usually use). You type the amount yourself.
 let recentList=[];
-const unitText=(s,g)=>s==="piece"?"\u00d7"+g:g+" g"+(s==="raw"?" raw":"");
 function recentItems(){
   const days=Object.keys(log).filter(d=>log[d].length).sort().reverse().slice(0,30); // last 30 days with meals
   const map=new Map();let seen=0;
   for(const d of days)for(const m of log[d].slice().reverse()){
-    const key=m.n.toLowerCase()+"|"+m.s;
-    let e=map.get(key);if(!e){e={n:m.n,s:m.s,count:0,amts:new Map(),first:seen++};map.set(key,e)}
+    const key=m.n.toLowerCase();
+    let e=map.get(key);if(!e){e={n:m.n,count:0,forms:new Map(),first:seen++};map.set(key,e)}
     e.count++;
-    const a=e.amts.get(m.g);if(a)a.c++;else e.amts.set(m.g,{c:1,at:seen++});
+    const f=e.forms.get(m.s);if(f)f.c++;else e.forms.set(m.s,{c:1,at:seen++});
   }
   const out=[];
   for(const e of map.values()){
     const f=find(e.n);if(!f)continue;                                   // food was deleted or renamed
-    const per=e.s==="piece"?f[3]:e.s==="raw"?f[1]:f[2];if(per==null)continue; // that form no longer exists
-    let g=null,best=null;                                                // usual amount: most common, then most recent
-    for(const [amt,a] of e.amts)if(!best||a.c>best.c||(a.c===best.c&&a.at<best.at)){g=amt;best=a}
-    out.push({name:f[0],s:e.s,g,p:e.s==="piece"?g*per:g*per/100,count:e.count,first:e.first});
+    const has={raw:f[1]!=null,cooked:f[2]!=null,piece:f[3]!=null};
+    let s=null,best=null;                                                // usual form: most common, then most recent
+    for(const [form,a] of e.forms)if(has[form]&&(!best||a.c>best.c||(a.c===best.c&&a.at<best.at))){s=form;best=a}
+    if(!s)s=f[3]!=null?"piece":f[2]!=null?"cooked":"raw";                // its old form is gone: use what exists
+    out.push({name:f[0],s,count:e.count,first:e.first});
   }
   return out.sort((a,b)=>b.count-a.count||a.first-b.first).slice(0,15);
 }
 function renderRecent(){
   recentList=recentItems();
   $("recentWrap").hidden=!recentList.length;
-  $("recent").innerHTML=recentList.map((it,i)=>'<button type="button" class="chip" data-i="'+i+'"><b>'+esc(it.name)+'</b> '+unitText(it.s,it.g)+'<span>+'+fmt(it.p)+' g</span></button>').join("");
-}
-let toastTimer;
-function toast(text,undo){
-  $("toastText").textContent=text;$("toast").hidden=false;
-  $("toastUndo").onclick=()=>{undo();$("toast").hidden=true};
-  clearTimeout(toastTimer);toastTimer=setTimeout(()=>{$("toast").hidden=true},6000);
+  $("recent").innerHTML=recentList.map((it,i)=>'<button type="button" class="chip" data-i="'+i+'">'+esc(it.name)+'</button>').join("");
 }
 $("recent").addEventListener("click",e=>{
   const b=e.target.closest(".chip");if(!b)return;
   const it=recentList[+b.dataset.i];if(!it)return;
-  const t=today(),meal={n:it.name,g:it.g,s:it.s,p:it.p};
-  (log[t]=log[t]||[]).push(meal);save();render();
-  toast("Added "+it.name+" "+unitText(it.s,it.g)+" (+"+fmt(it.p)+" g)",()=>{
-    const a=log[t]||[],i=a.indexOf(meal);if(i>=0){a.splice(i,1);save();render()}
-  });
+  $("food").value=it.name;
+  if(it.s!=="piece")state=it.s;
+  updateForm();$("grams").focus();
 });
+// pressing Enter in the amount box adds the meal
+$("grams").addEventListener("keydown",e=>{if(e.key==="Enter"&&!$("addBtn").disabled){e.preventDefault();$("addBtn").click()}});
 // slide the row with the mouse: drag it, or use the mouse wheel (touch screens just swipe)
 (function(){
   const el=$("recent");let down=false,moved=false,sx=0,sl=0;
