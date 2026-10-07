@@ -6,10 +6,10 @@
 <title>Protein Plate</title>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#f4f6f1;--card:#fff;--ink:#16302b;--mute:#5d726c;--line:#d9e1db;--gold:#e9a500;--goldink:#3a2a00;--ok:#1f7a5a;
+:root{--bg:#f4f6f1;--card:#fff;--ink:#16302b;--mute:#5d726c;--line:#d9e1db;--gold:#e9a500;--goldink:#3a2a00;--ok:#1f7a5a;--warn:#9a6700;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1c19;--card:#172a26;--ink:#e8f0ec;--mute:#93aaa3;--line:#27403a;--gold:#f0b429;--goldink:#2a1d00;--ok:#4cc79a}}
-:root[data-theme="dark"]{--bg:#0f1c19;--card:#172a26;--ink:#e8f0ec;--mute:#93aaa3;--line:#27403a;--gold:#f0b429;--goldink:#2a1d00;--ok:#4cc79a}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1c19;--card:#172a26;--ink:#e8f0ec;--mute:#93aaa3;--line:#27403a;--gold:#f0b429;--goldink:#2a1d00;--ok:#4cc79a;--warn:#f0b429}}
+:root[data-theme="dark"]{--bg:#0f1c19;--card:#172a26;--ink:#e8f0ec;--mute:#93aaa3;--line:#27403a;--gold:#f0b429;--goldink:#2a1d00;--ok:#4cc79a;--warn:#f0b429}
 *{box-sizing:border-box}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 "Bricolage Grotesque",system-ui,sans-serif}
@@ -82,6 +82,18 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
 .backup{margin-top:28px;text-align:center;color:var(--mute);font-size:.85rem}
 .backup button{border:0;background:none;color:inherit;text-decoration:underline;cursor:pointer;padding:6px 8px;font:inherit}
 .backup .msg{margin-top:4px}
+.recent{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 10px;margin-bottom:6px;cursor:grab;user-select:none;-webkit-user-select:none;touch-action:pan-x;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.recent.drag{cursor:grabbing}
+.recent::-webkit-scrollbar{height:6px}
+.recent::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.chip{flex:none;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:var(--bg);white-space:nowrap;cursor:inherit;font-size:.9rem}
+.chip:hover{border-color:var(--gold)}
+.chip b{font-weight:600}
+.chip span{color:var(--mute);margin-left:4px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:12px;font-size:.9rem;display:flex;gap:12px;align-items:center;max-width:calc(100% - 32px);z-index:20}
+.toast[hidden]{display:none}
+.toast button{border:0;background:none;color:var(--gold);font:inherit;font-weight:800;cursor:pointer;padding:0}
+.backup .warn{color:var(--warn);font-weight:600}
 </style>
 </head>
 <body>
@@ -93,6 +105,10 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
   <div class="sub"><span id="left"></span><span>Goal <input id="goal" type="number" min="1" inputmode="numeric" aria-label="Daily goal in grams"> g</span></div>
 
   <section class="card" aria-label="Add food">
+    <div id="recentWrap" hidden>
+      <label id="recentLabel">Quick add (tap to add to today)</label>
+      <div class="recent" id="recent" role="group" aria-labelledby="recentLabel"></div>
+    </div>
     <label for="food">Food</label>
     <input id="food" list="foods" placeholder="Start typing, e.g. dhal" autocomplete="off">
     <datalist id="foods"></datalist>
@@ -126,9 +142,11 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
     <button type="button" id="bkDown">Download backup</button> &middot;
     <button type="button" id="bkUp">Restore from backup</button>
     <input type="file" id="bkFile" accept="application/json,.json" hidden>
+    <p class="msg" id="bkLast"></p>
     <p class="msg" id="bkMsg" role="status"></p>
   </footer>
 </main>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toastText"></span> <button type="button" id="toastUndo">Undo</button></div>
 <dialog id="fdlg" aria-labelledby="ft" style="max-width:560px">
   <div class="dbody">
     <div class="top"><h2 id="ft" style="margin:0">Foods</h2><button type="button" class="more" id="fclose" style="width:auto;margin:0;padding:8px 14px">Close</button></div>
@@ -218,6 +236,8 @@ function render(){
   $("empty").style.display=items.length?"none":"block";
   $("log").innerHTML=items.map((i,k)=>'<li><div><b>'+i.n.replace(/</g,"&lt;")+'</b><span>'+(i.s==="piece"?i.g+(i.g==1?" piece":" pieces"):i.g+' g, '+i.s)+'</span></div><strong>'+fmt(i.p)+' g</strong><button aria-label="Remove" data-k="'+k+'">&times;</button></li>').join("");
   renderHistory();
+  renderRecent();
+  renderBackupNote();
 }
 let histLimit=7;
 const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;");
@@ -302,6 +322,80 @@ $("fclose").onclick=()=>$("fdlg").close();
 $("openAdd").onclick=()=>openFoodForm(null);
 $("ccancel").onclick=()=>$("dlg").close();
 ["dlg","fdlg"].forEach(id=>$(id).addEventListener("click",e=>{if(e.target===$(id))$(id).close()}));
+// ----- recent foods: one-tap row built from your own logs -----
+let recentList=[];
+const unitText=(s,g)=>s==="piece"?"\u00d7"+g:g+" g"+(s==="raw"?" raw":"");
+function recentItems(){
+  const days=Object.keys(log).filter(d=>log[d].length).sort().reverse().slice(0,30); // last 30 days with meals
+  const map=new Map();let seen=0;
+  for(const d of days)for(const m of log[d].slice().reverse()){
+    const key=m.n.toLowerCase()+"|"+m.s;
+    let e=map.get(key);if(!e){e={n:m.n,s:m.s,count:0,amts:new Map(),first:seen++};map.set(key,e)}
+    e.count++;
+    const a=e.amts.get(m.g);if(a)a.c++;else e.amts.set(m.g,{c:1,at:seen++});
+  }
+  const out=[];
+  for(const e of map.values()){
+    const f=find(e.n);if(!f)continue;                                   // food was deleted or renamed
+    const per=e.s==="piece"?f[3]:e.s==="raw"?f[1]:f[2];if(per==null)continue; // that form no longer exists
+    let g=null,best=null;                                                // usual amount: most common, then most recent
+    for(const [amt,a] of e.amts)if(!best||a.c>best.c||(a.c===best.c&&a.at<best.at)){g=amt;best=a}
+    out.push({name:f[0],s:e.s,g,p:e.s==="piece"?g*per:g*per/100,count:e.count,first:e.first});
+  }
+  return out.sort((a,b)=>b.count-a.count||a.first-b.first).slice(0,15);
+}
+function renderRecent(){
+  recentList=recentItems();
+  $("recentWrap").hidden=!recentList.length;
+  $("recent").innerHTML=recentList.map((it,i)=>'<button type="button" class="chip" data-i="'+i+'"><b>'+esc(it.name)+'</b> '+unitText(it.s,it.g)+'<span>+'+fmt(it.p)+' g</span></button>').join("");
+}
+let toastTimer;
+function toast(text,undo){
+  $("toastText").textContent=text;$("toast").hidden=false;
+  $("toastUndo").onclick=()=>{undo();$("toast").hidden=true};
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>{$("toast").hidden=true},6000);
+}
+$("recent").addEventListener("click",e=>{
+  const b=e.target.closest(".chip");if(!b)return;
+  const it=recentList[+b.dataset.i];if(!it)return;
+  const t=today(),meal={n:it.name,g:it.g,s:it.s,p:it.p};
+  (log[t]=log[t]||[]).push(meal);save();render();
+  toast("Added "+it.name+" "+unitText(it.s,it.g)+" (+"+fmt(it.p)+" g)",()=>{
+    const a=log[t]||[],i=a.indexOf(meal);if(i>=0){a.splice(i,1);save();render()}
+  });
+});
+// slide the row with the mouse: drag it, or use the mouse wheel (touch screens just swipe)
+(function(){
+  const el=$("recent");let down=false,moved=false,sx=0,sl=0;
+  el.addEventListener("pointerdown",e=>{if(e.pointerType!=="mouse"||e.button!==0)return;down=true;moved=false;sx=e.clientX;sl=el.scrollLeft});
+  window.addEventListener("pointermove",e=>{
+    if(!down)return;const dx=e.clientX-sx;
+    if(Math.abs(dx)>5){moved=true;el.classList.add("drag")}
+    if(moved)el.scrollLeft=sl-dx;
+  });
+  window.addEventListener("pointerup",()=>{if(!down)return;down=false;el.classList.remove("drag");setTimeout(()=>{moved=false},0)});
+  el.addEventListener("click",e=>{if(moved){e.stopPropagation();e.preventDefault()}},true); // a drag is not a tap
+  el.addEventListener("wheel",e=>{
+    if(el.scrollWidth<=el.clientWidth||Math.abs(e.deltaY)<=Math.abs(e.deltaX))return;
+    const max=el.scrollWidth-el.clientWidth;
+    if((e.deltaY<0&&el.scrollLeft<=0)||(e.deltaY>0&&el.scrollLeft>=max))return; // at the end: let the page scroll
+    e.preventDefault();el.scrollLeft+=e.deltaY;
+  },{passive:false});
+})();
+
+// ----- backup reminder (remembered per browser) -----
+const BK_KEY="ppLastBackup";
+function lastBackup(){try{const v=localStorage.getItem(BK_KEY);return v?new Date(v):null}catch(e){return null}}
+function renderBackupNote(){
+  const el=$("bkLast"),d=lastBackup(),hasData=countDays(log)>0;
+  el.classList.remove("warn");
+  if(!d||isNaN(d)){el.textContent="Last backup on this device: never";if(hasData)el.classList.add("warn");return}
+  const a=new Date();a.setHours(0,0,0,0);const b=new Date(d);b.setHours(0,0,0,0);
+  const n=Math.max(0,Math.round((a-b)/864e5));
+  el.textContent="Last backup on this device: "+(n===0?"today":n===1?"yesterday":n+" days ago");
+  if(n>=14)el.classList.add("warn");
+}
+
 // ----- backup: download everything as one file, or restore it from such a file -----
 const J={"Content-Type":"application/json"};
 const bkMsg=t=>{$("bkMsg").textContent=t};
@@ -339,7 +433,7 @@ async function restoreFromText(text){
 }
 $("bkDown").onclick=async()=>{
   bkMsg("");
-  try{const b=await buildBackup();saveFile("protein-plate-backup-"+today()+".json",b);bkMsg("Backup downloaded: "+(b.foods.default.length+b.foods.custom.length)+" foods, "+countDays(b.log)+" days of meals.")}
+  try{const b=await buildBackup();saveFile("protein-plate-backup-"+today()+".json",b);try{localStorage.setItem(BK_KEY,new Date().toISOString())}catch(e){}renderBackupNote();bkMsg("Backup downloaded: "+(b.foods.default.length+b.foods.custom.length)+" foods, "+countDays(b.log)+" days of meals.")}
   catch(e){bkMsg(e.message)}
 };
 $("bkUp").onclick=()=>$("bkFile").click();
