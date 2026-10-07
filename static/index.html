@@ -90,6 +90,18 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
 .chip:hover{border-color:var(--gold)}
 .chip b{font-weight:600}
 .backup .warn{color:var(--warn);font-weight:600}
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;height:140px;position:relative;margin-top:10px}
+.wcol{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:0}
+.wv{font-size:.75rem;color:var(--mute);height:16px;line-height:16px}
+.wbar{width:100%;max-width:38px;border-radius:6px 6px 2px 2px;background:var(--gold)}
+.wbar.ok{background:var(--ok)}
+.wbar.today{box-shadow:0 0 0 2px var(--ink)}
+.wgoal{position:absolute;left:0;right:0;border-top:2px dashed var(--mute);opacity:.7;pointer-events:none}
+.wdays{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:6px;border-top:1px solid var(--line);padding-top:6px}
+.wd{text-align:center;font-size:.75rem;color:var(--mute);line-height:1.25}
+.wd.today{color:var(--ink);font-weight:800}
+.wsum{margin:12px 0 0;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px}
+.wleg i{display:inline-block;width:18px;border-top:2px dashed var(--mute);vertical-align:middle;margin-right:4px}
 </style>
 </head>
 <body>
@@ -125,6 +137,17 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
     <h2>Today</h2>
     <ul id="log"></ul>
     <p class="empty" id="empty">Nothing logged yet.</p>
+  </section>
+
+  <section class="card" aria-label="Last 7 days">
+    <h2>Last 7 days</h2>
+    <p class="empty" id="weekEmpty" hidden>No meals logged in the last 7 days.</p>
+    <div id="weekChart">
+      <div class="week" id="week" role="list" aria-label="Protein per day"></div>
+      <div class="wdays" id="wdays" aria-hidden="true"></div>
+      <p class="wsum"><span id="wavg"></span><span id="wgoalcount"></span></p>
+      <p class="msg"><span class="wleg"><i></i>Goal <span id="wgoalval"></span> g</span> &middot; The average counts completed days with meals (today and days with nothing logged are left out).</p>
+    </div>
   </section>
 
   <section class="card" aria-label="History">
@@ -231,6 +254,7 @@ function render(){
   $("empty").style.display=items.length?"none":"block";
   $("log").innerHTML=items.map((i,k)=>'<li><div><b>'+i.n.replace(/</g,"&lt;")+'</b><span>'+(i.s==="piece"?i.g+(i.g==1?" piece":" pieces"):i.g+' g, '+i.s)+'</span></div><strong>'+fmt(i.p)+' g</strong><button aria-label="Remove" data-k="'+k+'">&times;</button></li>').join("");
   renderHistory();
+  renderWeek();
   renderRecent();
   renderBackupNote();
 }
@@ -317,6 +341,36 @@ $("fclose").onclick=()=>$("fdlg").close();
 $("openAdd").onclick=()=>openFoodForm(null);
 $("ccancel").onclick=()=>$("dlg").close();
 ["dlg","fdlg"].forEach(id=>$(id).addEventListener("click",e=>{if(e.target===$(id))$(id).close()}));
+// ----- last 7 days: bar chart, average, days the goal was reached -----
+const dateKey=dt=>dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
+function weekDays(){
+  const out=[];
+  for(let i=6;i>=0;i--){
+    const dt=new Date();dt.setHours(12,0,0,0);dt.setDate(dt.getDate()-i); // noon avoids daylight-saving edge cases
+    const k=dateKey(dt),meals=log[k]||[];
+    out.push({k,dt,meals:meals.length,total:meals.reduce((a,m)=>a+m.p,0),today:i===0});
+  }
+  return out;
+}
+function renderWeek(){
+  const days=weekDays(),H=120; // the tallest bar is 120px high
+  const any=days.some(d=>d.meals>0);
+  $("weekEmpty").hidden=any;$("weekChart").hidden=!any;
+  if(!any)return;
+  const scale=Math.max(goal,...days.map(d=>d.total));
+  const reached=d=>d.meals>0&&d.total>=goal;
+  $("week").innerHTML=days.map(d=>{
+    const px=d.meals&&d.total>0?Math.max(2,Math.round(d.total/scale*H)):0;
+    const label=d.dt.toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long"})+": "+(d.meals?fmt(d.total)+" g"+(reached(d)?", goal reached":""):"nothing logged");
+    return '<div class="wcol" role="listitem" aria-label="'+label+'" title="'+label+'"><span class="wv">'+(d.meals?Math.floor(d.total):"\u2013")+'</span><div class="wbar'+(reached(d)?" ok":"")+(d.today?" today":"")+'" style="height:'+px+'px"></div></div>';
+  }).join("")+'<div class="wgoal" style="bottom:'+Math.round(goal/scale*H)+'px"></div>';
+  $("wdays").innerHTML=days.map(d=>'<div class="wd'+(d.today?" today":"")+'">'+(d.today?"Today":d.dt.toLocaleDateString(undefined,{weekday:"short"}))+'<br>'+d.dt.getDate()+'</div>').join("");
+  const done=days.filter(d=>!d.today&&d.meals>0);
+  $("wavg").innerHTML=done.length?'Average <b>'+Math.round(done.reduce((a,d)=>a+d.total,0)/done.length)+' g</b> per day':'Average: \u2013';
+  $("wgoalcount").innerHTML='Goal reached on <b>'+days.filter(reached).length+'</b> of 7 days';
+  $("wgoalval").textContent=goal;
+}
+
 // ----- frequent foods: a sliding row of buttons built from your own logs -----
 // A button only picks the food (and the form you usually use). You type the amount yourself.
 let recentList=[];
