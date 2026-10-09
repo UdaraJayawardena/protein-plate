@@ -50,12 +50,6 @@ h2{font-size:1rem;margin:0 0 6px}
 details summary{cursor:pointer;font-weight:600}
 details .row{margin-top:10px}
 .msg{font-size:.85rem;color:var(--mute);margin:8px 0 0}
-details.day{border-bottom:1px solid var(--line)}
-details.day:last-child{border:0}
-details.day>summary{display:flex;justify-content:space-between;padding:11px 0;list-style:none}
-details.day>summary::-webkit-details-marker{display:none}
-details.day>summary b.ok{color:var(--ok)}
-details.day ul{padding:0 0 8px 10px}
 .more{width:100%;margin-top:10px;padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);cursor:pointer;font-weight:600}
 .top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px}
 .top h1{margin:0}
@@ -63,7 +57,7 @@ details.day ul{padding:0 0 8px 10px}
 dialog{width:calc(100% - 32px);max-width:440px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);padding:0}
 dialog::backdrop{background:rgba(0,0,0,.5)}
 .dbody{padding:18px}
-.btns{display:flex;gap:8px}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
 .top{flex-wrap:wrap}
 .plus.alt{background:transparent;border:1px solid var(--line);color:var(--ink);font-weight:600}
 .tw{max-height:55vh;overflow:auto;margin-top:10px;border:1px solid var(--line);border-radius:10px}
@@ -102,12 +96,28 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
 .wd.today{color:var(--ink);font-weight:800}
 .wsum{margin:12px 0 0;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px}
 .wleg i{display:inline-block;width:18px;border-top:2px dashed var(--mute);vertical-align:middle;margin-right:4px}
+.hlist{max-height:60vh;overflow:auto;margin-top:10px}
+.hday{border-bottom:1px solid var(--line);padding:6px 0 6px}
+.hday:last-child{border:0}
+.hhead{display:flex;justify-content:space-between;align-items:baseline;position:sticky;top:0;background:var(--card);padding:6px 0 4px;font-weight:800}
+.hhead small{font-weight:400;color:var(--mute);margin-left:6px}
+.hhead .ok{color:var(--ok)}
+.hrow{display:grid;grid-template-columns:4.8rem 1fr auto;gap:8px;padding:5px 0;font-size:.92rem;align-items:baseline}
+.hrow time{color:var(--mute);font-size:.82rem;white-space:nowrap}
+.hrow b{font-weight:600}
+.hrow .amt{display:block;color:var(--mute);font-size:.82rem}
+@media (max-width:600px){
+  #hdlg{width:100%;max-width:100%;height:100%;max-height:100%;border:0;border-radius:0}
+  #hdlg[open]{display:flex}
+  #hdlg .hbody{display:flex;flex-direction:column;flex:1;min-height:0;width:100%;padding-top:calc(18px + env(safe-area-inset-top,0px));padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))}
+  #hdlg .hlist{max-height:none;flex:1;min-height:0}
+}
 </style>
 </head>
 <body>
 <main>
   <div class="toprow"><button type="button" class="out" id="logout" hidden>Log out</button></div>
-  <div class="top"><h1 id="date"></h1><div class="btns"><button type="button" class="plus alt" id="openFoods">Foods</button><button type="button" class="plus" id="openAdd">+ Add food</button></div></div>
+  <div class="top"><h1 id="date"></h1><div class="btns"><button type="button" class="plus alt" id="openHistory">History</button><button type="button" class="plus alt" id="openFoods">Foods</button><button type="button" class="plus" id="openAdd">+ Add food</button></div></div>
   <div class="total"><span id="tot">0</span><small> g protein</small></div>
   <div class="bar" id="bar"><i id="fill"></i></div>
   <div class="sub"><span id="left"></span><span>Goal <input id="goal" type="number" min="1" inputmode="numeric" aria-label="Daily goal in grams"> g</span></div>
@@ -150,12 +160,6 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
     </div>
   </section>
 
-  <section class="card" aria-label="History">
-    <h2>History</h2>
-    <div id="hist"></div>
-    <button type="button" class="more" id="hmore" style="display:none"></button>
-    <p class="empty" id="hempty">No earlier days yet.</p>
-  </section>
 
   <footer class="backup">
     <button type="button" id="bkDown">Download backup</button> &middot;
@@ -165,6 +169,15 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
     <p class="msg" id="bkMsg" role="status"></p>
   </footer>
 </main>
+<dialog id="hdlg" aria-labelledby="ht" style="max-width:600px">
+  <div class="dbody hbody">
+    <div class="top"><h2 id="ht" style="margin:0">History</h2><button type="button" class="more" id="hclose" style="width:auto;margin:0;padding:8px 14px">Close</button></div>
+    <input id="hsearch" type="search" placeholder="Search meals, e.g. chicken" aria-label="Search meals" style="margin-top:12px">
+    <div class="hlist" id="hlist"></div>
+    <button type="button" class="more" id="hmore" style="display:none"></button>
+    <p class="msg">Times show when each meal was entered into the app. Meals logged before this feature have no time.</p>
+  </div>
+</dialog>
 <dialog id="fdlg" aria-labelledby="ft" style="max-width:560px">
   <div class="dbody">
     <div class="top"><h2 id="ft" style="margin:0">Foods</h2><button type="button" class="more" id="fclose" style="width:auto;margin:0;padding:8px 14px">Close</button></div>
@@ -253,27 +266,11 @@ function render(){
   $("goal").value=goal;
   $("empty").style.display=items.length?"none":"block";
   $("log").innerHTML=items.map((i,k)=>'<li><div><b>'+i.n.replace(/</g,"&lt;")+'</b><span>'+(i.s==="piece"?i.g+(i.g==1?" piece":" pieces"):i.g+' g, '+i.s)+'</span></div><strong>'+fmt(i.p)+' g</strong><button aria-label="Remove" data-k="'+k+'">&times;</button></li>').join("");
-  renderHistory();
   renderWeek();
   renderRecent();
   renderBackupNote();
 }
-let histLimit=7;
 const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-function renderHistory(){
-  const days=Object.keys(log).filter(d=>d!==today()&&log[d].length).sort().reverse();
-  $("hempty").style.display=days.length?"none":"block";
-  const shown=days.slice(0,histLimit);
-  $("hmore").style.display=days.length>histLimit?"block":"none";
-  $("hmore").textContent="Show older ("+(days.length-histLimit)+" more days)";
-  $("hist").innerHTML=shown.map(d=>{
-    const it=log[d],sum=it.reduce((a,i)=>a+i.p,0);
-    const lbl=new Date(d+"T00:00:00").toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short",year:"numeric"});
-    return '<details class="day"><summary><span>'+lbl+'</span><b class="'+(sum>=goal?"ok":"")+'">'+fmt(sum)+' g</b></summary><ul>'+
-      it.map(i=>'<li><div><b>'+esc(i.n)+'</b><span>'+(i.s==="piece"?i.g+(i.g==1?" piece":" pieces"):i.g+" g, "+i.s)+'</span></div><strong>'+fmt(i.p)+' g</strong></li>').join("")+'</ul></details>';
-  }).join("");
-}
-$("hmore").onclick=()=>{histLimit+=30;renderHistory()};
 $("date").textContent=new Date().toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long"});
 $("food").addEventListener("input",updateForm);
 $("grams").addEventListener("input",updateForm);
@@ -281,7 +278,7 @@ $("bRaw").onclick=()=>{state="raw";updateForm()};
 $("bCooked").onclick=()=>{state="cooked";updateForm()};
 $("addBtn").onclick=()=>{
   const c=current(),g=parseFloat($("grams").value);if(!c||!(g>0))return;
-  const t=today();(log[t]=log[t]||[]).push({n:c.f[0],g:g,s:c.st,p:prot(c,g)});
+  const t=today();(log[t]=log[t]||[]).push({n:c.f[0],g:g,s:c.st,p:prot(c,g),t:new Date().toISOString()});
   save();render();$("food").value="";$("grams").value="";updateForm();$("food").focus();
 };
 $("log").onclick=e=>{const k=e.target.dataset.k;if(k===undefined)return;log[today()].splice(+k,1);save();render()};
@@ -340,7 +337,38 @@ $("openFoods").onclick=async()=>{await refreshFoods();$("fsearch").value="";rend
 $("fclose").onclick=()=>$("fdlg").close();
 $("openAdd").onclick=()=>openFoodForm(null);
 $("ccancel").onclick=()=>$("dlg").close();
-["dlg","fdlg"].forEach(id=>$(id).addEventListener("click",e=>{if(e.target===$(id))$(id).close()}));
+["dlg","fdlg","hdlg"].forEach(id=>$(id).addEventListener("click",e=>{if(e.target===$(id))$(id).close()}));
+// ----- History window: every meal with the time it was entered -----
+let histLimit=14;
+function mealTime(m){
+  if(!m.t)return "\u2013";
+  const d=new Date(m.t);
+  return isNaN(d)?"\u2013":d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+}
+const amountText=m=>m.s==="piece"?m.g+(m.g==1?" piece":" pieces"):m.g+" g "+m.s;
+function renderHistoryWindow(){
+  const q=$("hsearch").value.trim().toLowerCase(),match=m=>m.n.toLowerCase().includes(q);
+  let days=Object.keys(log).filter(d=>log[d].length).sort().reverse();
+  if(q)days=days.filter(d=>log[d].some(match));
+  const shown=q?days:days.slice(0,histLimit);
+  $("hlist").innerHTML=shown.length?shown.map(d=>{
+    const ms=q?log[d].filter(match):log[d],sum=ms.reduce((a,m)=>a+m.p,0);
+    const label=new Date(d+"T12:00:00").toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short",year:"numeric"});
+    return '<div class="hday"><div class="hhead"><span>'+label+(d===today()?'<small>today</small>':'')+'</span><span class="'+(!q&&sum>=goal?"ok":"")+'">'+fmt(sum)+' g'+(q?'<small>matching</small>':'')+'</span></div>'+
+      ms.map(m=>'<div class="hrow"><time>'+mealTime(m)+'</time><div><b>'+esc(m.n)+'</b><span class="amt">'+amountText(m)+'</span></div><strong>'+fmt(m.p)+' g</strong></div>').join("")+'</div>';
+  }).join(""):'<p class="empty">'+(q?"No meals match.":"No meals logged yet.")+'</p>';
+  const more=!q&&days.length>histLimit;
+  $("hmore").style.display=more?"block":"none";
+  if(more)$("hmore").textContent="Show older ("+(days.length-histLimit)+" more days)";
+}
+$("openHistory").onclick=async()=>{
+  try{const r=await fetch("/api/data");if(r.ok){const o=await r.json();log=o.log||{};goal=o.goal||goal;render()}}catch(e){} // newest data first
+  $("hsearch").value="";histLimit=14;renderHistoryWindow();$("hdlg").showModal();
+};
+$("hsearch").addEventListener("input",renderHistoryWindow);
+$("hmore").onclick=()=>{histLimit+=30;renderHistoryWindow()};
+$("hclose").onclick=()=>$("hdlg").close();
+
 // ----- last 7 days: bar chart, average, days the goal was reached -----
 const dateKey=dt=>dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");
 function weekDays(){

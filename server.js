@@ -204,7 +204,10 @@ function cleanLog(log) {
     for (const m of meals) {
       if (!m || typeof m.n !== "string" || m.n.length > 100 || !isNum(m.g) || !isNum(m.p) ||
           !["raw", "cooked", "piece"].includes(m.s)) return null;
-      out[date].push({ n: m.n, g: m.g, s: m.s, p: m.p });
+      const meal = { n: m.n, g: m.g, s: m.s, p: m.p };
+      // t = when the meal was entered (ISO date-time); optional, because older meals have none
+      if (typeof m.t === "string" && m.t.length <= 40 && !isNaN(Date.parse(m.t))) meal.t = m.t;
+      out[date].push(meal);
     }
   }
   return out;
