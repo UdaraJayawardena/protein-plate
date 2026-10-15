@@ -115,6 +115,16 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
   #hdlg .hbody{display:flex;flex-direction:column;flex:1;min-height:0;width:100%;padding-top:calc(18px + env(safe-area-inset-top,0px));padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))}
   #hdlg .hlist{max-height:none;flex:1;min-height:0}
 }
+#dlg{max-height:92vh;overflow:auto}
+.mac{border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:10px}
+.mh{display:flex;justify-content:space-between;gap:8px;font-weight:600}
+.mh small{font-weight:400;color:var(--mute)}
+.mk{font-weight:600;color:var(--ok);font-size:.85rem;text-align:right}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.row3 input{padding:10px 8px}
+th:nth-child(2),td:nth-child(2){text-align:left;color:var(--mute)}
+tr.sub td{border-bottom:0}
+tr.sub+tr td{padding-top:0}
 </style>
 </head>
 <body>
@@ -182,15 +192,15 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
     <p class="msg">Times show when each meal was entered into the app. Meals logged before this feature have no time.</p>
   </div>
 </dialog>
-<dialog id="fdlg" aria-labelledby="ft" style="max-width:560px">
+<dialog id="fdlg" aria-labelledby="ft" style="max-width:720px">
   <div class="dbody">
     <div class="top"><h2 id="ft" style="margin:0">Foods</h2><button type="button" class="more" id="fclose" style="width:auto;margin:0;padding:8px 14px">Close</button></div>
     <input id="fsearch" type="search" placeholder="Search foods" aria-label="Search foods" style="margin-top:12px">
     <div class="tw"><table>
-      <thead><tr><th>Food</th><th>Raw</th><th>Cooked</th><th>Each</th><th><span class="sr">Actions</span></th></tr></thead>
+      <thead><tr><th>Food</th><th>Per</th><th title="Protein (g)">P</th><th title="Carbs (g)">C</th><th title="Fat (g)">F</th><th title="Calories">kcal</th><th><span class="sr">Actions</span></th></tr></thead>
       <tbody id="fbody"></tbody>
     </table></div>
-    <p class="msg">Protein in grams per 100g, except "Each", which is per piece. Changing a food doesn't change meals you already logged.</p>
+    <p class="msg">P = protein, C = carbs, F = fat, in grams. Raw and Cooked rows are per 100 g; Each is per piece. kcal = P&times;4 + C&times;4 + F&times;9, shown once all three are filled in. Changing a food doesn't change meals you already logged.</p>
   </div>
 </dialog>
 <dialog id="dlg" aria-labelledby="dt">
@@ -198,13 +208,31 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
     <h2 id="dt">Add my own food</h2>
     <label for="cn">Name</label>
     <input id="cn" placeholder="e.g. Mum's fish curry">
-    <div class="row">
-      <div><label for="cr">Protein / 100g raw</label><input id="cr" type="number" min="0" step="0.1" inputmode="decimal"></div>
-      <div><label for="cc">Protein / 100g cooked</label><input id="cc" type="number" min="0" step="0.1" inputmode="decimal"></div>
+    <p class="msg">Grams of protein, carbs and fat. Fill in the forms you use: raw and cooked are per 100 g; per piece is for things you count, like eggs. Fill in all three numbers to get calories.</p>
+    <div class="mac">
+      <div class="mh"><span>Raw <small>(per 100 g)</small></span><span class="mk" id="xr_k"></span></div>
+      <div class="row3">
+        <div><label for="xr_p">Protein g</label><input id="xr_p" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div><label for="xr_c">Carbs g</label><input id="xr_c" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div><label for="xr_f">Fat g</label><input id="xr_f" type="number" min="0" step="any" inputmode="decimal"></div>
+      </div>
     </div>
-    <label for="cp">Or protein per piece (for things you count, like eggs)</label>
-    <input id="cp" type="number" min="0" step="0.1" inputmode="decimal">
-    <p class="msg">Fill in raw/cooked, or per piece. Values for the built-in foods are estimates; check packs or a nutrition table for exact numbers.</p>
+    <div class="mac">
+      <div class="mh"><span>Cooked <small>(per 100 g)</small></span><span class="mk" id="xc_k"></span></div>
+      <div class="row3">
+        <div><label for="xc_p">Protein g</label><input id="xc_p" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div><label for="xc_c">Carbs g</label><input id="xc_c" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div><label for="xc_f">Fat g</label><input id="xc_f" type="number" min="0" step="any" inputmode="decimal"></div>
+      </div>
+    </div>
+    <div class="mac">
+      <div class="mh"><span>Per piece <small>(for things you count)</small></span><span class="mk" id="xe_k"></span></div>
+      <div class="row3">
+        <div><label for="xe_p">Protein g</label><input id="xe_p" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div><label for="xe_c">Carbs g</label><input id="xe_c" type="number" min="0" step="any" inputmode="decimal"></div>
+        <div><label for="xe_f">Fat g</label><input id="xe_f" type="number" min="0" step="any" inputmode="decimal"></div>
+      </div>
+    </div>
     <p class="msg" id="cmsg" role="status"></p>
     <div class="row" style="margin-top:12px">
       <button type="button" class="more" id="ccancel" style="margin-top:0">Cancel</button>
@@ -223,7 +251,10 @@ const $=id=>document.getElementById(id);
 const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
 async function load(){try{const [r,fr]=await Promise.all([fetch("/api/data"),fetch("/api/foods")]);if(!r.ok||!fr.ok)throw 0;const o=await r.json();log=o.log||{};goal=o.goal||100;FOODS=await fr.json()}catch(e){alert("Could not load your data. Is the server running and connected to the database?")}}
 function save(){fetch("/api/data",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({log,goal})}).catch(()=>alert("Save failed. Is the server running?"))}
-const toArr=x=>[x.name,x.raw??null,x.cooked??null,x.piece??null];
+// each food form is { p, c, f } (protein, carbs, fat); the rest of the app still works with protein only
+const pv=x=>x==null?null:typeof x==="number"?x:x.p;
+const toArr=x=>[x.name,pv(x.raw),pv(x.cooked),pv(x.piece)];
+const foodKcal=x=>x&&x.c!=null&&x.f!=null?Math.round(x.p*4+x.c*4+x.f*9):null; // calories of one 100 g (or one piece)
 const foods=()=>FOODS.default.concat(FOODS.custom).map(toArr);
 const attr=t=>esc(t).replace(/"/g,"&quot;");
 async function refreshFoods(){try{const r=await fetch("/api/foods");if(r.ok){FOODS=await r.json();fillList()}}catch(e){}}
@@ -289,6 +320,14 @@ $("addBtn").onclick=()=>{
 };
 $("log").onclick=e=>{const k=e.target.dataset.k;if(k===undefined)return;log[today()].splice(+k,1);save();render()};
 $("goal").addEventListener("change",()=>{const v=parseFloat($("goal").value);if(v>0){goal=v;save()}render()});
+const GROUPS=[["raw","xr","Raw"],["cooked","xc","Cooked"],["piece","xe","Per piece"]];
+function updKcal(){
+  for(const [k,id] of GROUPS){
+    const v=["p","c","f"].map(x=>$(id+"_"+x).value),any=v.some(x=>x!==""),all=v.every(x=>x!==""&&!isNaN(parseFloat(x)));
+    $(id+"_k").textContent=all?"= "+Math.round(parseFloat(v[0])*4+parseFloat(v[1])*4+parseFloat(v[2])*9)+" kcal":any?"fill all three for calories":"";
+  }
+}
+GROUPS.forEach(([k,id])=>["p","c","f"].forEach(x=>$(id+"_"+x).addEventListener("input",updKcal)));
 function openFoodForm(ed){
   const f=ed?FOODS[ed.group].find(x=>x.name===ed.name):null;
   if(ed&&!f)return;
@@ -296,19 +335,29 @@ function openFoodForm(ed){
   $("dt").textContent=f?"Edit food":"Add my own food";
   $("cadd").textContent=f?"Save changes":"Save food";
   $("cn").value=f?f.name:"";
-  $("cr").value=f&&f.raw!=null?f.raw:"";
-  $("cc").value=f&&f.cooked!=null?f.cooked:"";
-  $("cp").value=f&&f.piece!=null?f.piece:"";
+  for(const [k,id] of GROUPS){
+    const x=f&&f[k]!=null?(typeof f[k]==="number"?{p:f[k]}:f[k]):{};
+    for(const m of ["p","c","f"])$(id+"_"+m).value=x[m]!=null?x[m]:"";
+  }
+  updKcal();
   $("cmsg").textContent="";$("dlg").showModal();$("cn").focus();
 }
 $("cadd").onclick=async()=>{
-  const n=$("cn").value.trim(),r=$("cr").value,c=$("cc").value,pp=$("cp").value;
-  if(!n||(r===""&&c===""&&pp==="")){$("cmsg").textContent="Add a name and at least one protein value.";return}
+  const n=$("cn").value.trim(),bad=t=>{$("cmsg").textContent=t};
+  if(!n){bad("Add a name.");return}
   const food={name:n};
-  if(r!=="")food.raw=parseFloat(r);
-  if(c!=="")food.cooked=parseFloat(c);
-  if(pp!=="")food.piece=parseFloat(pp);
-  if([food.raw,food.cooked,food.piece].some(v=>v!==undefined&&!(v>=0))){$("cmsg").textContent="Protein values must be numbers, 0 or more.";return}
+  for(const [k,id,label] of GROUPS){
+    const v=["p","c","f"].map(x=>$(id+"_"+x).value);
+    if(v.every(x=>x===""))continue;                                    // this form is not used
+    if(v[0]===""){bad("The "+label.toLowerCase()+" values need a protein number.");return}
+    const o={p:parseFloat(v[0])};
+    if(v[1]!=="")o.c=parseFloat(v[1]);
+    if(v[2]!=="")o.f=parseFloat(v[2]);
+    if(Object.values(o).some(x=>!(x>=0))){bad("Protein, carbs and fat must be numbers, 0 or more.");return}
+    if(k!=="piece"&&o.p+(o.c||0)+(o.f||0)>100){bad("The "+label.toLowerCase()+" values are per 100 g, so protein + carbs + fat cannot add up to more than 100 g.");return}
+    food[k]=o;
+  }
+  if(!food.raw&&!food.cooked&&!food.piece){bad("Fill in the numbers for at least one form (raw, cooked or per piece).");return}
   const ed=editing;
   const err=await mutateFoods(F=>{
     if(ed){const i=F[ed.group].findIndex(x=>x.name===ed.name);if(i<0)return "That food no longer exists.";F[ed.group][i]=food}
@@ -320,12 +369,16 @@ $("cadd").onclick=async()=>{
   else{$("food").value=n;updateForm();$("grams").focus()}
 };
 function renderFoodsTable(){
-  const q=$("fsearch").value.trim().toLowerCase(),num=v=>v==null?"–":v,rows=[];
+  const q=$("fsearch").value.trim().toLowerCase(),num=v=>v==null?"\u2013":v,rows=[];
   ["custom","default"].forEach(g=>FOODS[g].forEach(f=>{if(!q||f.name.toLowerCase().includes(q))rows.push([g,f])}));
-  $("fbody").innerHTML=rows.length?rows.map(([g,f])=>'<tr><td>'+esc(f.name)+'<span class="tag'+(g==="custom"?" c":"")+'">'+g+'</span></td><td>'+num(f.raw)+'</td><td>'+num(f.cooked)+'</td><td>'+num(f.piece)+'</td><td>'+
-    '<button type="button" data-a="edit" data-g="'+g+'" data-n="'+attr(f.name)+'" aria-label="Edit '+attr(f.name)+'">&#9998;</button>'+
-    '<button type="button" data-a="del" data-g="'+g+'" data-n="'+attr(f.name)+'" aria-label="Delete '+attr(f.name)+'">&#10005;</button></td></tr>').join(""):
-    '<tr><td colspan="5" style="text-align:center;color:var(--mute)">No foods match.</td></tr>';
+  const forms=f=>[["raw","Raw"],["cooked","Cooked"],["piece","Each"]].filter(([k])=>f[k]!=null).map(([k,l])=>[l,typeof f[k]==="number"?{p:f[k]}:f[k]]);
+  $("fbody").innerHTML=rows.length?rows.map(([g,f])=>{
+    const fs=forms(f);
+    return fs.map(([label,x],i)=>'<tr'+(i<fs.length-1?' class="sub"':'')+'><td>'+(i===0?esc(f.name)+'<span class="tag'+(g==="custom"?" c":"")+'">'+g+'</span>':'<span class="sr">'+esc(f.name)+'</span>')+'</td><td>'+label+'</td><td>'+num(x.p)+'</td><td>'+num(x.c)+'</td><td>'+num(x.f)+'</td><td>'+num(foodKcal(x))+'</td><td>'+(i===0?
+      '<button type="button" data-a="edit" data-g="'+g+'" data-n="'+attr(f.name)+'" aria-label="Edit '+attr(f.name)+'">&#9998;</button>'+
+      '<button type="button" data-a="del" data-g="'+g+'" data-n="'+attr(f.name)+'" aria-label="Delete '+attr(f.name)+'">&#10005;</button>':'')+'</td></tr>').join("");
+  }).join(""):
+    '<tr><td colspan="7" style="text-align:center;color:var(--mute)">No foods match.</td></tr>';
 }
 $("fbody").onclick=async e=>{
   const b=e.target.closest("button");if(!b)return;

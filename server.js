@@ -162,15 +162,39 @@ function ready() {
 // ---------- validation ----------
 const isNum = (v) => typeof v === "number" && isFinite(v) && v >= 0;
 
+const FORMS = ["raw", "cooked", "piece"];
+
+// One form of a food: { p: protein, c: carbs, f: fat } in grams.
+// raw / cooked values are per 100 g; "piece" values are per piece.
+// Protein is required. Carbs and fat may be missing (older foods only had protein).
+// An old-style plain number is read as protein only.
+function cleanForm(v, perPiece) {
+  if (typeof v === "number") v = { p: v };
+  if (!v || typeof v !== "object") return null;
+  const out = {};
+  for (const k of ["p", "c", "f"]) {
+    const x = v[k];
+    if (x === undefined || x === null) {
+      if (k === "p") return null;
+      continue;
+    }
+    if (!isNum(x) || x > (perPiece ? 5000 : 100)) return null;
+    out[k] = x;
+  }
+  // per 100 g, protein + carbs + fat cannot add up to more than 100 g
+  if (!perPiece && out.p + (out.c || 0) + (out.f || 0) > 100.0001) return null;
+  return out;
+}
+
 function cleanFood(x) {
   if (!x || typeof x.name !== "string" || !x.name.trim() || x.name.length > 100) return null;
   const out = { name: x.name.trim() };
   let any = false;
-  for (const k of ["raw", "cooked", "piece"]) {
-    const v = x[k];
-    if (v === undefined || v === null) continue;
-    if (!isNum(v)) return null;
-    out[k] = v;
+  for (const k of FORMS) {
+    if (x[k] === undefined || x[k] === null) continue;
+    const form = cleanForm(x[k], k === "piece");
+    if (!form) return null;
+    out[k] = form;
     any = true;
   }
   return any ? out : null;
@@ -185,7 +209,7 @@ function cleanFoods(body) {
   for (const g of ["default", "custom"]) {
     for (const x of body[g]) {
       const f = cleanFood(x);
-      if (!f) return { error: "Invalid food: " + (x && x.name ? x.name : "(no name)") };
+      if (!f) return { error: 'Invalid food: "' + (x && x.name ? x.name : "(no name)") + '". Check the numbers: per 100 g, protein + carbs + fat cannot add up to more than 100 g.' };
       const key = f.name.toLowerCase();
       if (seen.has(key)) return { error: 'A food named "' + f.name + '" already exists.' };
       seen.add(key);
@@ -239,6 +263,7 @@ async function loadFoods() {
   const out = { default: [], custom: [] };
   for (const d of await foodsCol.find().sort({ order: 1 }).toArray()) {
     const { _id, nameKey, group, order, ...food } = d;
+    for (const k of FORMS) if (typeof food[k] === "number") food[k] = { p: food[k] }; // old protein-only format
     (out[group] || out.custom).push(food);
   }
   return out;
