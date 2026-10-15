@@ -296,7 +296,7 @@ function render(){
   const items=log[today()]||[];
   const sum=items.reduce((a,i)=>a+i.p,0);
   $("tot").textContent=fmt(sum);
-  $("kcalTotal").textContent=kcal(sum)+" kcal from protein";
+  $("kcalTotal").textContent=kcal(sum)+" Kcal";
   const pct=Math.min(100,sum/goal*100);
   $("fill").style.width=pct+"%";$("bar").classList.toggle("done",sum>=goal);
   $("left").textContent=sum>=goal?"Goal reached":fmt(goal-sum)+" g to go";
