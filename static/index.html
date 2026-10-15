@@ -43,7 +43,9 @@ li:last-child{border:0}
 li div{flex:1}
 li b{font-weight:600}
 li span{display:block;font-size:.85rem;color:var(--mute)}
-li strong{font-size:1.1rem}
+li strong{font-size:1.1rem;text-align:right}
+li strong small,.hrow strong small{display:block;font-weight:400;font-size:.75rem;color:var(--mute)}
+.kcal{margin:2px 0 0;color:var(--mute);font-size:.95rem}
 li button{border:0;background:none;color:var(--mute);font-size:1.3rem;cursor:pointer;padding:4px 8px}
 .empty{color:var(--mute);margin:0}
 h2{font-size:1rem;margin:0 0 6px}
@@ -105,6 +107,7 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
 .hrow{display:grid;grid-template-columns:4.8rem 1fr auto;gap:8px;padding:5px 0;font-size:.92rem;align-items:baseline}
 .hrow time{color:var(--mute);font-size:.82rem;white-space:nowrap}
 .hrow b{font-weight:600}
+.hrow strong{text-align:right}
 .hrow .amt{display:block;color:var(--mute);font-size:.82rem}
 @media (max-width:600px){
   #hdlg{width:100%;max-width:100%;height:100%;max-height:100%;border:0;border-radius:0}
@@ -119,6 +122,7 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
   <div class="toprow"><button type="button" class="out" id="logout" hidden>Log out</button></div>
   <div class="top"><h1 id="date"></h1><div class="btns"><button type="button" class="plus alt" id="openHistory">History</button><button type="button" class="plus alt" id="openFoods">Foods</button><button type="button" class="plus" id="openAdd">+ Add food</button></div></div>
   <div class="total"><span id="tot">0</span><small> g protein</small></div>
+  <p class="kcal" id="kcalTotal"></p>
   <div class="bar" id="bar"><i id="fill"></i></div>
   <div class="sub"><span id="left"></span><span>Goal <input id="goal" type="number" min="1" inputmode="numeric" aria-label="Daily goal in grams"> g</span></div>
 
@@ -236,6 +240,7 @@ async function mutateFoods(fn){
 }
 const find=n=>foods().find(f=>f[0].toLowerCase()===n.trim().toLowerCase());
 const fmt=n=>(Math.round(n*10)/10).toString();
+const kcal=p=>Math.round(p*4); // protein has 4 calories per gram
 function fillList(){$("foods").innerHTML=foods().map(f=>'<option value="'+f[0].replace(/"/g,"&quot;")+'">').join("")}
 function current(){
   const f=find($("food").value);if(!f)return null;
@@ -260,12 +265,13 @@ function render(){
   const items=log[today()]||[];
   const sum=items.reduce((a,i)=>a+i.p,0);
   $("tot").textContent=fmt(sum);
+  $("kcalTotal").textContent=kcal(sum)+" kcal from protein";
   const pct=Math.min(100,sum/goal*100);
   $("fill").style.width=pct+"%";$("bar").classList.toggle("done",sum>=goal);
   $("left").textContent=sum>=goal?"Goal reached":fmt(goal-sum)+" g to go";
   $("goal").value=goal;
   $("empty").style.display=items.length?"none":"block";
-  $("log").innerHTML=items.map((i,k)=>'<li><div><b>'+i.n.replace(/</g,"&lt;")+'</b><span>'+(i.s==="piece"?i.g+(i.g==1?" piece":" pieces"):i.g+' g, '+i.s)+'</span></div><strong>'+fmt(i.p)+' g</strong><button aria-label="Remove" data-k="'+k+'">&times;</button></li>').join("");
+  $("log").innerHTML=items.map((i,k)=>'<li><div><b>'+i.n.replace(/</g,"&lt;")+'</b><span>'+(i.s==="piece"?i.g+(i.g==1?" piece":" pieces"):i.g+' g, '+i.s)+'</span></div><strong>'+fmt(i.p)+' g<small>'+kcal(i.p)+' kcal</small></strong><button aria-label="Remove" data-k="'+k+'">&times;</button></li>').join("");
   renderWeek();
   renderRecent();
   renderBackupNote();
@@ -354,8 +360,8 @@ function renderHistoryWindow(){
   $("hlist").innerHTML=shown.length?shown.map(d=>{
     const ms=q?log[d].filter(match):log[d],sum=ms.reduce((a,m)=>a+m.p,0);
     const label=new Date(d+"T12:00:00").toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short",year:"numeric"});
-    return '<div class="hday"><div class="hhead"><span>'+label+(d===today()?'<small>today</small>':'')+'</span><span class="'+(!q&&sum>=goal?"ok":"")+'">'+fmt(sum)+' g'+(q?'<small>matching</small>':'')+'</span></div>'+
-      ms.map(m=>'<div class="hrow"><time>'+mealTime(m)+'</time><div><b>'+esc(m.n)+'</b><span class="amt">'+amountText(m)+'</span></div><strong>'+fmt(m.p)+' g</strong></div>').join("")+'</div>';
+    return '<div class="hday"><div class="hhead"><span>'+label+(d===today()?'<small>today</small>':'')+'</span><span class="'+(!q&&sum>=goal?"ok":"")+'">'+fmt(sum)+' g<small>'+kcal(sum)+' kcal</small>'+(q?'<small>matching</small>':'')+'</span></div>'+
+      ms.map(m=>'<div class="hrow"><time>'+mealTime(m)+'</time><div><b>'+esc(m.n)+'</b><span class="amt">'+amountText(m)+'</span></div><strong>'+fmt(m.p)+' g<small>'+kcal(m.p)+' kcal</small></strong></div>').join("")+'</div>';
   }).join(""):'<p class="empty">'+(q?"No meals match.":"No meals logged yet.")+'</p>';
   const more=!q&&days.length>histLimit;
   $("hmore").style.display=more?"block":"none";
