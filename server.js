@@ -229,6 +229,8 @@ function cleanLog(log) {
       if (!m || typeof m.n !== "string" || m.n.length > 100 || !isNum(m.g) || !isNum(m.p) ||
           !["raw", "cooked", "piece"].includes(m.s)) return null;
       const meal = { n: m.n, g: m.g, s: m.s, p: m.p };
+      // c, f = carbs and fat in grams for this meal (kept together; absent when the food had no carbs/fat set)
+      if (isNum(m.c) && isNum(m.f)) { meal.c = m.c; meal.f = m.f; }
       // t = when the meal was entered (ISO date-time); optional, because older meals have none
       if (typeof m.t === "string" && m.t.length <= 40 && !isNaN(Date.parse(m.t))) meal.t = m.t;
       out[date].push(meal);

@@ -125,6 +125,7 @@ td button{border:0;background:none;cursor:pointer;font-size:1rem;padding:4px 6px
 th:nth-child(2),td:nth-child(2){text-align:left;color:var(--mute)}
 tr.sub td{border-bottom:0}
 tr.sub+tr td{padding-top:0}
+.pm{display:block;margin-top:2px}
 </style>
 </head>
 <body>
@@ -271,7 +272,25 @@ async function mutateFoods(fn){
 }
 const find=n=>foods().find(f=>f[0].toLowerCase()===n.trim().toLowerCase());
 const fmt=n=>(Math.round(n*10)/10).toString();
-const kcal=p=>Math.round(p*4); // protein has 4 calories per gram
+// calories = protein x 4 + carbs x 4 + fat x 9
+// A meal has c and f (grams of carbs and fat) only if its food had them set when the meal was logged.
+const hasMacros=m=>m.c!=null&&m.f!=null;
+const mealKcal=m=>hasMacros(m)?Math.round(m.p*4+m.c*4+m.f*9):null;
+function totals(ms){
+  let p=0,c=0,f=0,k=0,miss=0;
+  for(const m of ms){p+=m.p;if(hasMacros(m)){c+=m.c;f+=m.f;k+=m.p*4+m.c*4+m.f*9}else miss++}
+  return {p,c,f,kcal:Math.round(k),miss};
+}
+const nf=n=>n.toLocaleString("en-US");
+const r3=x=>Math.round(x*1000)/1000;
+const foodObj=name=>FOODS.default.concat(FOODS.custom).find(x=>x.name.toLowerCase()===String(name).toLowerCase());
+// carbs and fat for g grams (or g pieces) of a food in a form, or null if the food has no carbs/fat set
+function macrosFor(name,st,g){
+  const fo=foodObj(name),x=fo&&fo[st];
+  if(!x||typeof x!=="object"||x.c==null||x.f==null)return null;
+  const k=st==="piece"?g:g/100;
+  return {c:r3(x.c*k),f:r3(x.f*k)};
+}
 function fillList(){$("foods").innerHTML=foods().map(f=>'<option value="'+f[0].replace(/"/g,"&quot;")+'">').join("")}
 function current(){
   const f=find($("food").value);if(!f)return null;
@@ -289,20 +308,24 @@ function updateForm(){
   $("gl").textContent=pc?"How many":"Weight (grams)";
   $("grams").placeholder=pc?"e.g. 2":"e.g. 150";
   const g=parseFloat($("grams").value);
-  if(c&&g>0){$("prev").innerHTML=fmt(prot(c,g))+' g <span>protein ('+(pc?c.per+' g each':c.per+' g per 100g, '+c.st)+')</span>';$("addBtn").disabled=false}
+  if(c&&g>0){
+    const pr=prot(c,g),mc=macrosFor(c.f[0],c.st,g);
+    $("prev").innerHTML=fmt(pr)+' g <span>protein ('+(pc?c.per+' g each':c.per+' g per 100g, '+c.st)+')</span><span class="pm">'+
+      (mc?'Carbs '+fmt(mc.c)+' g &middot; Fat '+fmt(mc.f)+' g &middot; '+Math.round(pr*4+mc.c*4+mc.f*9)+' kcal':'Carbs and fat are not set for this food, so there are no calories.')+'</span>';
+    $("addBtn").disabled=false}
   else{$("prev").textContent=c?(pc?"Enter how many":"Enter the weight"):"";$("addBtn").disabled=true}
 }
 function render(){
   const items=log[today()]||[];
-  const sum=items.reduce((a,i)=>a+i.p,0);
+  const T=totals(items),sum=T.p;
   $("tot").textContent=fmt(sum);
-  $("kcalTotal").textContent=kcal(sum)+" Kcal";
+  $("kcalTotal").textContent=nf(T.kcal)+" kcal \u00b7 Carbs "+fmt(T.c)+" g \u00b7 Fat "+fmt(T.f)+" g"+(T.miss?" \u00b7 "+T.miss+(T.miss===1?" meal has":" meals have")+" no carbs/fat":"");
   const pct=Math.min(100,sum/goal*100);
   $("fill").style.width=pct+"%";$("bar").classList.toggle("done",sum>=goal);
   $("left").textContent=sum>=goal?"Goal reached":fmt(goal-sum)+" g to go";
   $("goal").value=goal;
   $("empty").style.display=items.length?"none":"block";
-  $("log").innerHTML=items.map((i,k)=>'<li><div><b>'+i.n.replace(/</g,"&lt;")+'</b><span>'+(i.s==="piece"?i.g+(i.g==1?" piece":" pieces"):i.g+' g, '+i.s)+'</span></div><strong>'+fmt(i.p)+' g<small>'+kcal(i.p)+' kcal</small></strong><button aria-label="Remove" data-k="'+k+'">&times;</button></li>').join("");
+  $("log").innerHTML=items.map((i,k)=>{const kc=mealKcal(i);return '<li><div><b>'+i.n.replace(/</g,"&lt;")+'</b><span>'+(i.s==="piece"?i.g+(i.g==1?" piece":" pieces"):i.g+' g, '+i.s)+'</span><span>'+(hasMacros(i)?'Carbs '+fmt(i.c)+' g &middot; Fat '+fmt(i.f)+' g':'carbs/fat not set')+'</span></div><strong>'+fmt(i.p)+' g<small>'+(kc==null?'\u2013':kc)+' kcal</small></strong><button aria-label="Remove" data-k="'+k+'">&times;</button></li>'}).join("");
   renderWeek();
   renderRecent();
   renderBackupNote();
@@ -315,7 +338,10 @@ $("bRaw").onclick=()=>{state="raw";updateForm()};
 $("bCooked").onclick=()=>{state="cooked";updateForm()};
 $("addBtn").onclick=()=>{
   const c=current(),g=parseFloat($("grams").value);if(!c||!(g>0))return;
-  const t=today();(log[t]=log[t]||[]).push({n:c.f[0],g:g,s:c.st,p:prot(c,g),t:new Date().toISOString()});
+  const t=today(),mc=macrosFor(c.f[0],c.st,g),meal={n:c.f[0],g:g,s:c.st,p:prot(c,g)};
+  if(mc){meal.c=mc.c;meal.f=mc.f}                       // snapshot: the numbers as they are now
+  meal.t=new Date().toISOString();
+  (log[t]=log[t]||[]).push(meal);
   save();render();$("food").value="";$("grams").value="";updateForm();$("food").focus();
 };
 $("log").onclick=e=>{const k=e.target.dataset.k;if(k===undefined)return;log[today()].splice(+k,1);save();render()};
@@ -411,10 +437,10 @@ function renderHistoryWindow(){
   if(q)days=days.filter(d=>log[d].some(match));
   const shown=q?days:days.slice(0,histLimit);
   $("hlist").innerHTML=shown.length?shown.map(d=>{
-    const ms=q?log[d].filter(match):log[d],sum=ms.reduce((a,m)=>a+m.p,0);
+    const ms=q?log[d].filter(match):log[d],T=totals(ms),sum=T.p,known=ms.length-T.miss;
     const label=new Date(d+"T12:00:00").toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short",year:"numeric"});
-    return '<div class="hday"><div class="hhead"><span>'+label+(d===today()?'<small>today</small>':'')+'</span><span class="'+(!q&&sum>=goal?"ok":"")+'">'+fmt(sum)+' g<small>'+kcal(sum)+' kcal</small>'+(q?'<small>matching</small>':'')+'</span></div>'+
-      ms.map(m=>'<div class="hrow"><time>'+mealTime(m)+'</time><div><b>'+esc(m.n)+'</b><span class="amt">'+amountText(m)+'</span></div><strong>'+fmt(m.p)+' g<small>'+kcal(m.p)+' kcal</small></strong></div>').join("")+'</div>';
+    return '<div class="hday"><div class="hhead"><span>'+label+(d===today()?'<small>today</small>':'')+'</span><span class="'+(!q&&sum>=goal?"ok":"")+'">'+fmt(sum)+' g<small>'+(known?nf(T.kcal):'\u2013')+' kcal</small><small>'+(known?'C '+fmt(T.c)+' g &middot; F '+fmt(T.f)+' g':'no carbs/fat yet')+'</small>'+(known&&T.miss?'<small>'+T.miss+' without carbs/fat</small>':'')+(q?'<small>matching</small>':'')+'</span></div>'+
+      ms.map(m=>{const kc=mealKcal(m);return '<div class="hrow"><time>'+mealTime(m)+'</time><div><b>'+esc(m.n)+'</b><span class="amt">'+amountText(m)+'</span><span class="amt">'+(hasMacros(m)?'Carbs '+fmt(m.c)+' g &middot; Fat '+fmt(m.f)+' g':'carbs/fat not set')+'</span></div><strong>'+fmt(m.p)+' g<small>'+(kc==null?'\u2013':kc)+' kcal</small></strong></div>'}).join("")+'</div>';
   }).join(""):'<p class="empty">'+(q?"No meals match.":"No meals logged yet.")+'</p>';
   const more=!q&&days.length>histLimit;
   $("hmore").style.display=more?"block":"none";
